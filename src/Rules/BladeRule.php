@@ -9,7 +9,6 @@ use Bladestan\NodeAnalyzer\BladeViewMethodsMatcher;
 use Bladestan\NodeAnalyzer\LaravelViewFunctionMatcher;
 use Bladestan\NodeAnalyzer\MailablesContentMatcher;
 use Bladestan\TemplateCompiler\Rules\TemplateRulesRegistry;
-use Bladestan\TemplateCompiler\ValueObject\RenderTemplateWithParameters;
 use Bladestan\ViewRuleHelper;
 use InvalidArgumentException;
 use PhpParser\Node;
@@ -51,27 +50,31 @@ final class BladeRule implements Rule
     {
         assert($node instanceof CallLike);
 
-        try {
-            $renderTemplatesWithParameter = match (true) {
-                $node instanceof StaticCall,
-                $node instanceof FuncCall => $this->laravelViewFunctionMatcher->match($node, $scope),
-                $node instanceof MethodCall => $this->bladeViewMethodsMatcher->match($node, $scope),
-                $node instanceof New_ => $this->mailablesContentMatcher->match($node, $scope),
-                default => null,
-            };
-        } catch (InvalidArgumentException $invalidArgumentException) {
-            return [$this->templateErrorsFactory->createError(
-                $invalidArgumentException->getMessage(),
-                'bladestan.missing',
-                $node->getLine(),
-                $scope->getFile()
-            )];
+        $renderTemplatesWithParameters = match (true) {
+            $node instanceof StaticCall,
+            $node instanceof FuncCall => $this->laravelViewFunctionMatcher->match($node, $scope),
+            $node instanceof MethodCall => $this->bladeViewMethodsMatcher->match($node, $scope),
+            $node instanceof New_ => $this->mailablesContentMatcher->match($node, $scope),
+            default => [],
+        };
+
+        $errors = [];
+        foreach ($renderTemplatesWithParameters as $renderTemplateWithParameter) {
+            try {
+                $errors = [
+                    ...$errors,
+                    ...$this->viewRuleHelper->processNode($node, $scope, $renderTemplateWithParameter),
+                ];
+            } catch (InvalidArgumentException $invalidArgumentException) {
+                $errors[] = $this->templateErrorsFactory->createError(
+                    $invalidArgumentException->getMessage(),
+                    'bladestan.missing',
+                    $node->getLine(),
+                    $scope->getFile()
+                );
+            }
         }
 
-        if (! $renderTemplatesWithParameter instanceof RenderTemplateWithParameters) {
-            return [];
-        }
-
-        return $this->viewRuleHelper->processNode($node, $scope, $renderTemplatesWithParameter);
+        return $errors;
     }
 }

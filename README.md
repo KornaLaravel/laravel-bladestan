@@ -1,3 +1,5 @@
+[![codecov](https://codecov.io/gh/bladestan/bladestan/graph/badge.svg?token=YUVN1BPDES)](https://codecov.io/gh/bladestan/bladestan)
+
 # Bladestan
 
 Static analysis for Blade templates in Laravel projects.

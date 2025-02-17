@@ -9,10 +9,10 @@ use Illuminate\Contracts\Routing\ResponseFactory;
 use Illuminate\Contracts\View\Factory as ViewFactoryContract;
 use Illuminate\Http\Response;
 use Illuminate\Mail\Mailable;
+use Illuminate\Mail\Message;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\View\Component;
 use Illuminate\View\Factory as ViewFactory;
-use InvalidArgumentException;
 use PhpParser\Node\Arg;
 use PhpParser\Node\Expr\Array_;
 use PhpParser\Node\Expr\MethodCall;
@@ -57,12 +57,30 @@ final class BladeViewMethodsMatcher
     private const UNLESS = 'renderUnless';
 
     /**
+     * @var string
+     */
+    private const MARKDOWN = 'markdown';
+
+    /**
+     * @var string
+     */
+    private const TEXT = 'text';
+
+    /**
+     * @var string
+     */
+    private const HTML = 'html';
+
+    /**
      * @var list<string>
      */
     private const VIEW_FACTORY_METHOD_NAMES = [self::MAKE, self::WHEN, self::UNLESS, self::FIRST, self::EACH];
 
+    private const MAILABLE_METHOD_NAMES = [self::VIEW, self::HTML, self::MARKDOWN, self::TEXT];
+
+    private const MAIL_METHOD_NAMES = [self::VIEW, self::MARKDOWN, self::TEXT];
+
     public function __construct(
-        private readonly TemplateFilePathResolver $templateFilePathResolver,
         private readonly ViewDataParametersAnalyzer $viewDataParametersAnalyzer,
         private readonly MagicViewWithCallParameterResolver $magicViewWithCallParameterResolver,
         private readonly ClassPropertiesResolver $classPropertiesResolver,
@@ -70,34 +88,35 @@ final class BladeViewMethodsMatcher
     }
 
     /**
-     * @throws InvalidArgumentException
+     * @return list<RenderTemplateWithParameters>
      */
-    public function match(MethodCall $methodCall, Scope $scope): ?RenderTemplateWithParameters
+    public function match(MethodCall $methodCall, Scope $scope): array
     {
         $methodName = $this->resolveName($methodCall);
         if ($methodName === null) {
-            return null;
+            return [];
         }
 
         $calledOnType = $scope->getType($methodCall->var);
 
         if (! $this->isCalledOnTypeABladeView($calledOnType, $methodName)) {
-            return null;
+            return [];
         }
 
         $templateNameArg = $this->findTemplateNameArg($methodName, $methodCall);
-        if (! $templateNameArg instanceof Arg) {
-            return null;
+        if (! $templateNameArg instanceof Arg || ! $templateNameArg->value instanceof String_) {
+            return [];
         }
 
-        $template = $templateNameArg->value;
-
-        $resolvedTemplateFilePath = $this->templateFilePathResolver->resolveExistingFilePath($template, $scope);
-        if ($resolvedTemplateFilePath === null) {
-            return null;
-        }
+        $template = $templateNameArg->value->value;
 
         $parametersArray = $this->magicViewWithCallParameterResolver->resolve($methodCall, $scope);
+
+        if ($this->isClassWithMessage($calledOnType)) {
+            $parametersArray += [
+                'message' => new ObjectType(Message::class),
+            ];
+        }
 
         if ($methodName === self::EACH) {
             $parametersArray += $this->getEachVariables($methodCall, $scope);
@@ -111,7 +130,7 @@ final class BladeViewMethodsMatcher
         $nativeReflection = $calledOnType->getObjectClassReflections()[0];
         $parametersArray += $this->classPropertiesResolver->resolve($nativeReflection, $scope);
 
-        return new RenderTemplateWithParameters($resolvedTemplateFilePath, $parametersArray);
+        return [new RenderTemplateWithParameters($template, $parametersArray)];
     }
 
     private function resolveName(MethodCall $methodCall): ?string
@@ -129,6 +148,13 @@ final class BladeViewMethodsMatcher
             new ObjectType(ResponseFactory::class),
             new ObjectType(Response::class),
             new ObjectType(Component::class),
+        ]))->isSuperTypeOf($objectType)
+            ->yes();
+    }
+
+    private function isClassWithMessage(Type $objectType): bool
+    {
+        return (new UnionType([
             new ObjectType(Mailable::class),
             new ObjectType(MailMessage::class),
         ]))->isSuperTypeOf($objectType)
@@ -143,6 +169,14 @@ final class BladeViewMethodsMatcher
 
         if ((new ObjectType(ViewFactoryContract::class))->isSuperTypeOf($objectType)->yes()) {
             return $methodName === self::MAKE;
+        }
+
+        if ((new ObjectType(Mailable::class))->isSuperTypeOf($objectType)->yes()) {
+            return in_array($methodName, self::MAILABLE_METHOD_NAMES, true);
+        }
+
+        if ((new ObjectType(MailMessage::class))->isSuperTypeOf($objectType)->yes()) {
+            return in_array($methodName, self::MAIL_METHOD_NAMES, true);
         }
 
         if ($this->isClassWithViewMethod($objectType)) {
@@ -192,7 +226,13 @@ final class BladeViewMethodsMatcher
             return null;
         }
 
-        if ($methodName === self::VIEW || $methodName === self::MAKE || $methodName === self::EACH) {
+        if ($methodName === self::VIEW
+            || $methodName === self::MAKE
+            || $methodName === self::EACH
+            || $methodName === self::HTML
+            || $methodName === self::MARKDOWN
+            || $methodName === self::TEXT
+        ) {
             return $args[0];
         }
 
@@ -221,7 +261,13 @@ final class BladeViewMethodsMatcher
             return null;
         }
 
-        if ($methodName === self::VIEW || $methodName === self::MAKE || $methodName === self::FIRST) {
+        if ($methodName === self::VIEW
+            || $methodName === self::MAKE
+            || $methodName === self::FIRST
+            || $methodName === self::HTML
+            || $methodName === self::MARKDOWN
+            || $methodName === self::TEXT
+        ) {
             return $args[1];
         }
 
