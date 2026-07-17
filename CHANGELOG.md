@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.7] - 2026-07-18
+
+### Fixed
+
+- Ignore `@bladestan-signature` docblocks instead of failing on them, so a template can be
+  annotated ahead of the template-centric 0.12 release while still analysing cleanly on 0.11.
+
 ## [0.11.6] - 2026-07-17
 
 The final 0.11.x release before the template-centric rewrite, focused on keeping

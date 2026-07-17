@@ -66,6 +66,13 @@ final class BladeToPHPCompiler
     private const COMPONENT_END_REGEX = '/echo \$__env->renderComponent\(\);.+?unset\(\$__componentOriginal.+?}/s';
 
     /**
+     * Matches a @php ... @endphp block whose docblock contains the @bladestan-signature marker
+     * (a leading description before the marker is fine). Group 1 is the whole block; only blocks
+     * carrying the marker are dropped, so an ordinary @var docblock inside @php keeps working.
+     */
+    private const SIGNATURE_DOCBLOCK_REGEX = '/(@php\s*\n\s*\/\*\*(?:(?!\*\/)[\s\S])*?@bladestan-signature\b[\s\S]*?\*\/\s*\n\s*@endphp)/';
+
+    /**
      * @var list<array{0: string, 1: string}>
      */
     private array $errors;
@@ -187,10 +194,30 @@ final class BladeToPHPCompiler
     }
 
     /**
+     * Replace any @bladestan-signature block with the same number of blank lines, so the marker
+     * never reaches compilation while every following template line keeps its original number.
+     */
+    private function stripSignatureDocblock(string $fileContents): string
+    {
+        return preg_replace_callback(
+            self::SIGNATURE_DOCBLOCK_REGEX,
+            static fn (array $match): string => str_repeat("\n", substr_count($match[1], "\n")),
+            $fileContents
+        ) ?? $fileContents;
+    }
+
+    /**
      * @param array<string> $allVariablesList
      */
     private function inlineInclude(string $filePath, string $fileContents, array $allVariablesList): string
     {
+        // A @bladestan-signature block declares a template's variable contract for template-centric
+        // analysis. Here types come from the call site instead, so the block carries no meaning;
+        // leaving it in would turn its @var tags into contradictory inline type assertions. Drop it
+        // (keeping the line count intact for error mapping) so a template can already carry that
+        // annotation while still analysing cleanly.
+        $fileContents = $this->stripSignatureDocblock($fileContents);
+
         // Precompile contents to add template file name and line numbers
         $fileContents = $this->fileNameAndLineNumberAddingPreCompiler
             ->completeLineCommentsToBladeContents($filePath, $fileContents);
