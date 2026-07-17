@@ -11,6 +11,7 @@ use Bladestan\PhpParser\ArrayStringToArrayConverter;
 use Bladestan\PhpParser\NodeVisitor\AddLoopVarTypeToForeachNodeVisitor;
 use Bladestan\PhpParser\NodeVisitor\DeleteInlineHTML;
 use Bladestan\PhpParser\NodeVisitor\IncludeCollector;
+use Bladestan\PhpParser\NodeVisitor\RemoveLivewireCompilerArtifacts;
 use Bladestan\PhpParser\NodeVisitor\TransformEach;
 use Bladestan\PhpParser\NodeVisitor\TransformIncludes;
 use Bladestan\PhpParser\SimplePhpParser;
@@ -200,6 +201,7 @@ final class BladeToPHPCompiler
             /** @throws InvalidArgumentException */
             $compiledBlade = $this->bladeCompiler->compileString($fileContents);
             $stmts = $this->traverseStmtsWithVisitors($compiledBlade, [
+                new RemoveLivewireCompilerArtifacts(),
                 new DeleteInlineHTML(),
                 new AddLoopVarTypeToForeachNodeVisitor(),
                 new TransformEach(),
